@@ -233,7 +233,7 @@ function createMovingWall() {
         // Horizontal wall moving top to bottom
         let wallHeight = 50; // Height of the wall
         let startY = -wallHeight;
-        let speed = wallSpeed + survivalTime * 0.05; // Increase speed over time
+        let speed = wallSpeed + survivalTime * 0.03; // Increase speed over time
 
         // Position holes
         for (let i = 0; i < holeCount; i++) {
@@ -628,7 +628,7 @@ function updateDifficulty() {
     if (laserSpeed > 15) laserSpeed = 15; // Cap laser speed
 
     // Increase wall speed over time
-    wallSpeed = 1 + survivalTime * 0.05;
+    wallSpeed = 1 + survivalTime * 0.025;
     if (wallSpeed > 10) wallSpeed = 10; // Cap wall speed
 }
 
