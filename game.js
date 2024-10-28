@@ -323,8 +323,8 @@ keys[e.code] = false;
 
 // Toggle Flow Function
 function toggleFlow() {
-if (!flowActive && flowAvailable > 4) {
-flowAvailable = flowAvailable - 4;
+if (!flowActive && flowAvailable >= 3) {
+flowAvailable = flowAvailable - 3;
 // Activate Flow
 flowActive = true;
 flowMultiplier = 0.2; // Slow down projectiles and platforms
@@ -433,7 +433,7 @@ lastFlowIncrement = Date.now();
 
 // Flow Consumption
 if (flowActive && Date.now() - lastFlowDecrement >= 1000) {
-flowAvailable -= 4; // Consumes 4 flow points per second
+flowAvailable -= 3; // Consumes 3 flow points per second
 lastFlowDecrement = Date.now();
 
 if (flowAvailable <= 0) {
