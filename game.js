@@ -17,7 +17,8 @@ let player = {
     speed: 5,
     jumpStrength: 30, // Your custom jump strength
     onGround: false,
-    jumpCount: 0
+    jumpCount: 0,
+    isTeleporting: false // Flag to prevent jump during teleport
 };
 
 let keys = {};
@@ -47,7 +48,7 @@ let maxLaserHeightPercentage = 0.2; // Maximum laser width is 20% of canvas size
 
 // Wall Variables
 let lastWallSpawn = Date.now();
-let wallSpawnInterval = 10000; // Start spawning walls after 20 seconds
+let wallSpawnInterval = 10000; // Start spawning walls after 10 seconds
 let wallSpeed = 1; // Initial wall speed
 
 let ground = {
@@ -62,6 +63,22 @@ let ground = {
 let survivalStartTime = Date.now();
 let survivalTime = 0;
 let projectileSpeedIncrement = 0;
+
+// Flow Variables
+let flowAvailable = 0; // Total flow available to the player
+let flowActive = false; // Is flow currently active
+let flowMultiplier = 1; // Multiplier for slowing down during flow
+let lastFlowIncrement = Date.now(); // Last time flow was incremented
+let lastFlowDecrement = Date.now(); // Last time flow was decremented
+
+// Flow Text Variables
+let flowText = {
+    active: false,
+    startTime: 0,
+    duration: 1000, // Duration to display "FLOW" text in milliseconds
+    maxScale: 1.5, // Maximum scale for expansion effect
+    currentScale: 1 // Current scale factor
+};
 
 // Game State
 let gameState = 'playing'; // 'playing' or 'gameover'
@@ -159,6 +176,7 @@ function createLaser() {
         color: 'rgba(255, 0, 0, 0.3)', // Red color with 30% opacity
         charging: true,
         chargeStartTime: Date.now(),
+        firedAt: null, // Time when laser fired
         vertical: false // Horizontal laser
     };
     lasers.push(laser);
@@ -181,6 +199,7 @@ function createVerticalLaser() {
         color: 'rgba(255, 0, 0, 0.3)', // Red color with 30% opacity
         charging: true,
         chargeStartTime: Date.now(),
+        firedAt: null, // Time when laser fired
         vertical: true // Vertical laser
     };
     lasers.push(laser);
@@ -265,7 +284,7 @@ function createMovingWall() {
 // Handle Input
 document.addEventListener('keydown', function(e) {
     // Prevent default actions for specific keys
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR'].includes(e.code)) {
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyC'].includes(e.code)) {
         e.preventDefault();
     }
 
@@ -279,10 +298,15 @@ document.addEventListener('keydown', function(e) {
         }
 
         // Jumping
-        if (gameState === 'playing' && (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') && player.jumpCount < 2) {
+        if (gameState === 'playing' && !player.isTeleporting && (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') && player.jumpCount < 2) {
             player.velY = -player.jumpStrength;
             player.onGround = false;
             player.jumpCount++;
+        }
+
+        // Activate/Deactivate Flow
+        if (gameState === 'playing' && e.code === 'KeyC') {
+            toggleFlow();
         }
     }
 });
@@ -291,11 +315,68 @@ document.addEventListener('keyup', function(e) {
     keys[e.code] = false;
 });
 
+// Toggle Flow Function
+function toggleFlow() {
+    if (!flowActive && flowAvailable > 4) {
+        flowAvailable = flowAvailable - 4;
+        // Activate Flow
+        flowActive = true;
+        flowMultiplier = 0.2; // Slow down projectiles and platforms
+        applyScreenInversion();
+        lastFlowDecrement = Date.now(); // Reset flow consumption timer
+
+        // Activate FLOW Text Effect
+        activateFlowText();
+    } else if (flowActive) {
+        // Deactivate Flow
+        flowActive = false;
+        flowMultiplier = 1; // Restore normal speed
+        removeScreenInversion();
+    }
+}
+
+// Apply Screen Inversion
+function applyScreenInversion() {
+    canvas.style.filter = 'invert(1)';
+}
+
+// Remove Screen Inversion
+function removeScreenInversion() {
+    canvas.style.filter = 'none';
+}
+
+// Activate FLOW Text Effect
+function activateFlowText() {
+    flowText.active = true;
+    flowText.startTime = Date.now();
+    flowText.currentScale = 1;
+}
+
+// Update FLOW Text Effect
+function updateFlowText() {
+    if (flowText.active) {
+        let elapsed = Date.now() - flowText.startTime;
+
+        if (elapsed < flowText.duration) {
+            // Calculate scale factor (from 1 to maxScale)
+            let progress = elapsed / flowText.duration;
+            flowText.currentScale = 1 + (flowText.maxScale - 1) * progress;
+        } else {
+            // End FLOW text effect
+            flowText.active = false;
+        }
+    }
+}
+
 // Resize Canvas on Window Resize
 window.addEventListener('resize', function() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ground.width = canvas.width;
+    ground.y = canvas.height - ground.height;
+
+    // Optionally regenerate platforms to fit new size
+    createPlatforms();
 });
 
 // Game Loop
@@ -303,6 +384,9 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 
     if (gameState === 'playing') {
+        // Update platforms first
+        updatePlatforms();
+
         // Handle Input
         if (keys['ArrowLeft'] || keys['KeyA']) {
             if (player.velX > -player.speed) {
@@ -335,6 +419,26 @@ function gameLoop() {
         // Update survival time
         survivalTime = Math.floor((Date.now() - survivalStartTime) / 1000);
 
+        // Flow Accumulation
+        if (Date.now() - lastFlowIncrement >= 1000) {
+            flowAvailable += 1;
+            lastFlowIncrement = Date.now();
+        }
+
+        // Flow Consumption
+        if (flowActive && Date.now() - lastFlowDecrement >= 1000) {
+            flowAvailable -= 4; // Consumes 4 flow points per second
+            lastFlowDecrement = Date.now();
+
+            if (flowAvailable <= 0) {
+                flowAvailable = 0;
+                toggleFlow(); // Deactivate flow when it runs out
+            }
+        }
+
+        // Update FLOW Text Effect
+        updateFlowText();
+
         // Difficulty scaling
         updateDifficulty();
 
@@ -362,14 +466,11 @@ function gameLoop() {
             lastVerticalLaserSpawn = Date.now();
         }
 
-        // Spawn moving walls after 20 seconds
+        // Spawn moving walls after 10 seconds
         if (survivalTime >= 10 && Date.now() - lastWallSpawn > wallSpawnInterval) {
             createMovingWall();
             lastWallSpawn = Date.now();
         }
-
-        // Update platforms
-        updatePlatforms();
 
         // Update projectiles
         updateProjectiles();
@@ -395,86 +496,126 @@ function gameLoop() {
 }
 
 function movePlayer() {
-    // Predict next position
+    // Handle horizontal movement
     let nextX = player.x + player.velX;
-    let nextY = player.y + player.velY;
-
-    // Create a bounding box for the next position
-    let playerBox = {
+    let playerBoxX = {
         x: nextX,
+        y: player.y,
+        width: player.width,
+        height: player.height
+    };
+
+    let obstacles = [...platforms, ground];
+
+    // Process horizontal collisions
+    for (let obstacle of obstacles) {
+        if (rectIntersect(playerBoxX, obstacle)) {
+            let overlap = getOverlap(playerBoxX, obstacle, 'x');
+            if (overlap !== 0) {
+                // Resolve collision on X axis
+                if (player.velX > 0) {
+                    // Moving right; place player to the left of obstacle
+                    nextX = obstacle.x - player.width - 1; // Subtract 1 pixel buffer
+                } else if (player.velX < 0) {
+                    // Moving left; place player to the right of obstacle
+                    nextX = obstacle.x + obstacle.width + 1; // Add 1 pixel buffer
+                }
+                player.velX = 0;
+            }
+        }
+    }
+
+    player.isTeleporting = true; // Prevent jumps during collision resolution
+    player.x = nextX;
+
+    // Prevent player from going off-screen horizontally
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+    // Handle vertical movement
+    let nextY = player.y + player.velY;
+    let playerBoxY = {
+        x: player.x,
         y: nextY,
         width: player.width,
         height: player.height
     };
 
-    // List of all platforms (including ground)
-    let obstacles = [...platforms, ground];
-
-    // Check for collisions
     for (let obstacle of obstacles) {
-        // Update moving platforms
-        if (obstacle.type === 'moving') {
-            obstacle.x += obstacle.speed * obstacle.direction;
-            // Reverse direction at screen edges
-            if (obstacle.x <= 0 || obstacle.x + obstacle.width >= canvas.width) {
-                obstacle.direction *= -1;
-            }
-        } else if (obstacle.type === 'disappearing') {
-            // Disappear when player lands on it
-            if (rectIntersect(playerBox, obstacle)) {
-                platforms = platforms.filter(p => p !== obstacle);
-                continue;
-            }
-        }
-
-        if (rectIntersect(playerBox, obstacle)) {
-            // Determine collision side
-            let collisionDir = colCheck(playerBox, obstacle);
-
-            if (collisionDir === 'l' || collisionDir === 'r') {
-                // Horizontal collision
-                player.velX = 0;
-                if (collisionDir === 'l') {
-                    nextX = obstacle.x + obstacle.width;
-                } else {
-                    nextX = obstacle.x - player.width;
-                }
-            } else if (collisionDir === 't' || collisionDir === 'b') {
-                // Vertical collision
-                player.velY = 0;
-                if (collisionDir === 'b') {
-                    // Player is hitting the obstacle from below
-                    nextY = obstacle.y + obstacle.height;
-                } else {
-                    // Player is landing on the obstacle
-                    nextY = obstacle.y - player.height;
+        if (rectIntersect(playerBoxY, obstacle)) {
+            let overlap = getOverlap(playerBoxY, obstacle, 'y');
+            if (overlap !== 0) {
+                // Resolve collision on Y axis
+                if (player.velY > 0) {
+                    // Falling down; place player on top of obstacle
+                    nextY = obstacle.y - player.height - 1; // Subtract 1 pixel buffer
                     player.onGround = true;
                     player.jumpCount = 0;
+
+                    // Remove the platform if it's disappearing
+                    if (obstacle.type === 'disappearing') {
+                        platforms = platforms.filter(p => p !== obstacle);
+                    }
+                } else if (player.velY < 0) {
+                    // Moving up; place player below the obstacle
+                    nextY = obstacle.y + obstacle.height + 1; // Add 1 pixel buffer
                 }
+                player.velY = 0;
             }
         }
     }
 
-    // Update player's position after resolving collisions
-    player.x = nextX;
     player.y = nextY;
 
-    // Prevent player from going off-screen
-    if (player.x < 0) player.x = 0;
-    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+    // Prevent player from going off-screen vertically
     if (player.y + player.height > canvas.height) player.y = canvas.height - player.height;
+
+    player.isTeleporting = false; // Collision resolution complete
+}
+
+function getOverlap(playerBox, obstacle, axis) {
+    if (axis === 'x') {
+        if (playerBox.x < obstacle.x + obstacle.width && playerBox.x + playerBox.width > obstacle.x) {
+            if (player.velX > 0) {
+                // Moving right
+                return (playerBox.x + playerBox.width) - obstacle.x;
+            } else if (player.velX < 0) {
+                // Moving left
+                return (obstacle.x + obstacle.width) - playerBox.x;
+            }
+        }
+    } else if (axis === 'y') {
+        if (playerBox.y < obstacle.y + obstacle.height && playerBox.y + playerBox.height > obstacle.y) {
+            if (player.velY > 0) {
+                // Falling down
+                return (playerBox.y + playerBox.height) - obstacle.y;
+            } else if (player.velY < 0) {
+                // Moving up
+                return (obstacle.y + obstacle.height) - playerBox.y;
+            }
+        }
+    }
+    return 0;
 }
 
 function updatePlatforms() {
-    // Platforms are updated in movePlayer() for movement
-    // Additional logic can be added here if needed
+    for (let platform of platforms) {
+        if (platform.type === 'moving') {
+            platform.x += platform.speed * platform.direction * flowMultiplier;
+            // Reverse direction at screen edges
+            if (platform.x <= 0 || platform.x + platform.width >= canvas.width) {
+                platform.direction *= -1;
+            }
+        }
+        // Additional platform types (e.g., disappearing) can be handled here if needed
+    }
 }
 
 function updateProjectiles() {
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let proj = projectiles[i];
-        proj.x += proj.speedX;
-        proj.y += proj.speedY;
+        proj.x += proj.speedX * flowMultiplier;
+        proj.y += proj.speedY * flowMultiplier;
 
         // Remove projectile if it's off-screen
         if (
@@ -515,13 +656,13 @@ function updateWalls() {
     for (let i = walls.length - 1; i >= 0; i--) {
         let wall = walls[i];
 
-        wall.x += wall.speedX;
-        wall.y += wall.speedY;
+        wall.x += wall.speedX * flowMultiplier;
+        wall.y += wall.speedY * flowMultiplier;
 
         // Update holes position
         for (let hole of wall.holes) {
-            hole.x += wall.speedX;
-            hole.y += wall.speedY;
+            hole.x += wall.speedX * flowMultiplier;
+            hole.y += wall.speedY * flowMultiplier;
         }
 
         // Remove wall if it goes off-screen
@@ -590,9 +731,11 @@ function rectIntersect(r1, r2) {
     );
 }
 
+// Collision Direction Check - No longer used in this revision
+/*
 function colCheck(shapeA, shapeB) {
-    let dx = shapeA.x + shapeA.width / 2 - (shapeB.x + shapeB.width / 2);
-    let dy = shapeA.y + shapeA.height / 2 - (shapeB.y + shapeB.height / 2);
+    let dx = (shapeA.x + shapeA.width / 2) - (shapeB.x + shapeB.width / 2);
+    let dy = (shapeA.y + shapeA.height / 2) - (shapeB.y + shapeB.height / 2);
     let width = (shapeA.width + shapeB.width) / 2;
     let height = (shapeA.height + shapeB.height) / 2;
     let crossWidth = width * dy;
@@ -601,13 +744,14 @@ function colCheck(shapeA, shapeB) {
 
     if (Math.abs(dx) <= width && Math.abs(dy) <= height) {
         if (crossWidth > crossHeight) {
-            collision = crossWidth > -crossHeight ? 'b' : 'l';
+            collision = (crossWidth > (-crossHeight)) ? 'b' : 'l';
         } else {
-            collision = crossWidth > -crossHeight ? 'r' : 't';
+            collision = (crossWidth > (-crossHeight)) ? 'r' : 't';
         }
     }
     return collision;
 }
+*/
 
 function updateDifficulty() {
     // Decrease the spawn interval over time to increase difficulty
@@ -688,6 +832,32 @@ function renderGame() {
     ctx.font = '20px Arial';
     ctx.fillText('Survival Time: ' + survivalTime + 's', 10, 30);
 
+    // Draw Flow Available
+    ctx.fillStyle = 'blue';
+    ctx.font = '20px Arial';
+    ctx.fillText('FLOW: ' + flowAvailable, 10, 60);
+
+    // Draw Instruction Texts in Top Right
+    ctx.fillStyle = 'black';
+    ctx.font = '18px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('Double Tap Spacebar to Double Jump', canvas.width - 10, 30);
+    ctx.fillText('Press C for FLOW', canvas.width - 10, 55);
+    ctx.textAlign = 'left'; // Reset text alignment to default
+
+    // Draw FLOW Text Effect if Active
+    if (flowText.active) {
+        ctx.save(); // Save current state
+        ctx.font = 'bold 50px Arial';
+        ctx.fillStyle = 'black';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(flowText.currentScale, flowText.currentScale);
+        ctx.fillText('FLOW', 0, 0);
+        ctx.restore(); // Restore to original state
+    }
+
     // If game over, draw game over screen
     if (gameState === 'gameover') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
@@ -715,6 +885,7 @@ function resetGame() {
     player.velY = 0;
     player.onGround = false;
     player.jumpCount = 0;
+    player.isTeleporting = false;
 
     // Reset projectiles and lasers
     projectiles = [];
@@ -728,9 +899,21 @@ function resetGame() {
     projectileSpawnInterval = baseProjectileSpawnInterval;
     projectileSpeedIncrement = 0;
 
-    // Reset survival time
+    // Reset survival time and flow
     survivalStartTime = Date.now();
     survivalTime = 0;
+    flowAvailable = 0;
+    flowActive = false;
+    flowMultiplier = 1;
+    lastFlowIncrement = Date.now();
+    lastFlowDecrement = Date.now();
+
+    // Reset FLOW Text Effect
+    flowText.active = false;
+    flowText.currentScale = 1;
+
+    // Remove screen inversion if active
+    removeScreenInversion();
 
     // Regenerate platforms
     createPlatforms();
