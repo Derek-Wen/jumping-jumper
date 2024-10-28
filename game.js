@@ -86,7 +86,7 @@ let gameState = 'playing'; // 'playing' or 'gameover'
 // Create Platforms
 function createPlatforms() {
     platforms = []; // Clear existing platforms
-    let platformCount = 10; // Number of platforms
+    let platformCount = 12; // Number of platforms
     let spacing = (canvas.height - ground.height - 100) / platformCount;
 
     for (let i = 0; i < platformCount; i++) {
