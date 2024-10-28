@@ -849,7 +849,8 @@ ctx.font = '18px Arial';
 ctx.textAlign = 'right';
 ctx.fillText('Double Tap Spacebar to Double Jump', canvas.width - 10, 30);
 ctx.fillText('Press C for FLOW', canvas.width - 10, 55);
-    ctx.fillText('Press R to Restart', canvas.width - 10, 80);
+ctx.fillText('Press R to Restart', canvas.width - 10, 80);
+ctx.fillText('By Derek Wen', canvas.width - 10, 105);
 ctx.textAlign = 'left'; // Reset text alignment to default
 
 // Draw FLOW Text Effect if Active
