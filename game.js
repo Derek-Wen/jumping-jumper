@@ -210,8 +210,14 @@ function createMovingWall() {
     // Determine if the wall is horizontal or vertical
     let isVertical = Math.random() < 0.5;
 
-    // Determine the number of holes (1 to 3)
-    let holeCount = Math.floor(Math.random() * 3) + 1;
+    let holeCount;
+
+    // Determine the number of holes based on wall orientation
+    if (isVertical) {
+        holeCount = Math.floor(Math.random() * 3) + 3; // 3 to 5 holes for vertical walls
+    } else {
+        holeCount = Math.floor(Math.random() * 3) + 1; // 1 to 3 holes for horizontal walls
+    }
 
     let holes = [];
 
