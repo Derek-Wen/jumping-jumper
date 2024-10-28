@@ -1,5 +1,8 @@
 # Jumping Jumper
 
+## PLAY THE GAME
+- https://derek-wen.github.io/jumping-jumper/
+
 ## Project Description
 
 **Jumping Jumper** is an engaging JavaScript-based platformer game developed using HTML5 Canvas. Players control a character navigating through a series of platforms while avoiding various obstacles such as projectiles, lasers, and moving walls. The game introduces a strategic "Flow" mechanic that allows players to temporarily slow down time, providing an edge in dodging incoming threats. As players survive longer, the game's difficulty scales dynamically, offering an increasingly challenging and immersive experience.
