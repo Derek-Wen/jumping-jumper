@@ -18,7 +18,20 @@ let player = {
     jumpStrength: 30, // Your custom jump strength
     onGround: false,
     jumpCount: 0,
-    isTeleporting: false // Flag to prevent jump during teleport
+    isTeleporting: false, // Flag to prevent jump during teleport
+    
+    // **Dash Properties**
+    isDashing: false, // Indicates if the player is currently dashing
+    dashSpeed: 50, // Increased Speed during dash (originally 15)
+    dashDuration: 500, // Increased Duration of dash in milliseconds (originally 200)
+    dashCooldown: 1000, // Cooldown between dashes in milliseconds (changed from 0)
+    lastDashTime: 0, // Timestamp of the last dash
+    
+    // **Trail Properties**
+    trail: [], // Array to store trail positions
+    maxTrailLength: 10, // Maximum number of trail points
+    trailInterval: 50, // Time between trail points in milliseconds
+    lastTrailTime: 0 // Timestamp of the last trail addition
 };
 
 let keys = {};
@@ -290,7 +303,7 @@ function createMovingWall() {
 // Handle Input
 document.addEventListener('keydown', function(e) {
     // Prevent default actions for specific keys
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyC'].includes(e.code)) {
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyC', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
         e.preventDefault();
     }
 
@@ -304,7 +317,7 @@ document.addEventListener('keydown', function(e) {
         }
 
         // Jumping
-        if (gameState === 'playing' && !player.isTeleporting && (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') && player.jumpCount < 2) {
+        if (gameState === 'playing' && !player.isTeleporting && !player.isDashing && (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') && player.jumpCount < 2) {
             player.velY = -player.jumpStrength;
             player.onGround = false;
             player.jumpCount++;
@@ -314,12 +327,57 @@ document.addEventListener('keydown', function(e) {
         if (gameState === 'playing' && e.code === 'KeyC') {
             toggleFlow();
         }
+
+        // **Activate Dash**
+        if (gameState === 'playing' && (e.code === 'ShiftLeft' || e.code === 'ShiftRight')) {
+            initiateDash();
+        }
     }
 });
 
 document.addEventListener('keyup', function(e) {
     keys[e.code] = false;
 });
+
+// **Initiate Dash Function**
+function initiateDash() {
+    let currentTime = Date.now();
+
+    // Check if dash is not active and cooldown has passed
+    if (!player.isDashing && (currentTime - player.lastDashTime) > player.dashCooldown) {
+        // Determine dash direction based on current movement
+        let direction = 0;
+        if (keys['ArrowLeft'] || keys['KeyA']) {
+            direction = -1;
+        } else if (keys['ArrowRight'] || keys['KeyD']) {
+            direction = 1;
+        }
+
+        // If not moving, default dash direction to right
+        if (direction === 0) {
+            direction = 1;
+        }
+
+        // Set dashing state
+        player.isDashing = true;
+        player.lastDashTime = currentTime;
+
+        // Apply dash velocity
+        player.velX = player.dashSpeed * direction;
+
+        // **Optional:** Play dash sound or add visual effects here
+
+        // **Start Trail Effect**
+        player.trail = []; // Reset trail
+        player.lastTrailTime = currentTime;
+
+        // Set a timeout to end dash after dashDuration
+        setTimeout(() => {
+            player.isDashing = false;
+            // **Do not reset velX to 0 here. Let friction handle deceleration.**
+        }, player.dashDuration);
+    }
+}
 
 // Toggle Flow Function
 function toggleFlow() {
@@ -395,13 +453,33 @@ function gameLoop() {
 
         // Handle Input
         if (keys['ArrowLeft'] || keys['KeyA']) {
-            if (player.velX > -player.speed) {
+            // Allow movement even during dash
+            if (player.velX > -player.speed * 2) { // Increased limit for dashing
                 player.velX -= 0.5;
             }
         }
         if (keys['ArrowRight'] || keys['KeyD']) {
-            if (player.velX < player.speed) {
+            // Allow movement even during dash
+            if (player.velX < player.speed * 2) { // Increased limit for dashing
                 player.velX += 0.5;
+            }
+        }
+
+        // **Prevent acceleration during dash**
+        if (player.isDashing) {
+            // Apply friction to gradually stop after dash
+            player.velX *= friction;
+
+            // **Update Trail Positions**
+            let currentTime = Date.now();
+            if (currentTime - player.lastTrailTime >= player.trailInterval) {
+                player.trail.push({ x: player.x, y: player.y });
+                player.lastTrailTime = currentTime;
+
+                // Limit trail length
+                if (player.trail.length > player.maxTrailLength) {
+                    player.trail.shift();
+                }
             }
         }
 
@@ -409,12 +487,19 @@ function gameLoop() {
         player.velY += gravity;
         player.velX *= friction;
 
-        // Limit maximum velocities
+        // **Limit maximum velocities only if not dashing**
         const maxSpeed = 10;
-        if (player.velY > maxSpeed) player.velY = maxSpeed;
-        if (player.velY < -maxSpeed) player.velY = -maxSpeed;
-        if (player.velX > maxSpeed) player.velX = maxSpeed;
-        if (player.velX < -maxSpeed) player.velX = -maxSpeed;
+        if (!player.isDashing) {
+            if (player.velY > maxSpeed) player.velY = maxSpeed;
+            if (player.velY < -maxSpeed) player.velY = -maxSpeed;
+            if (player.velX > maxSpeed) player.velX = maxSpeed;
+            if (player.velX < -maxSpeed) player.velX = -maxSpeed;
+        } else {
+            // Optionally, set a higher maxSpeed during dash
+            const dashMaxSpeed = player.dashSpeed * 2;
+            if (player.velX > dashMaxSpeed) player.velX = dashMaxSpeed;
+            if (player.velX < -dashMaxSpeed) player.velX = -dashMaxSpeed;
+        }
 
         // Reset onGround flag
         player.onGround = false;
@@ -782,7 +867,7 @@ function updateDifficulty() {
     if (wallSpeed > 10) wallSpeed = 10; // Cap wall speed
 }
 
-// Render Function
+// **Render Function with Trail Effect**
 function renderGame() {
     // Clear Canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -829,9 +914,30 @@ function renderGame() {
         }
     }
 
-    // Draw Player
-    ctx.fillStyle = player.color;
+    // **Draw Trail Effect**
+    if (player.isDashing && player.trail.length > 0) {
+        for (let i = 0; i < player.trail.length; i++) {
+            let trailPoint = player.trail[i];
+            let trailOpacity = (i + 1) / player.trail.length * 0.5; // Fade out trail
+            ctx.fillStyle = `rgba(213, 96, 115, ${trailOpacity})`; // Semi-transparent trail color
+            ctx.fillRect(trailPoint.x, trailPoint.y, player.width, player.height);
+        }
+    }
+
+    // **Draw Player with Color Change During Dash**
+    if (player.isDashing) {
+        ctx.fillStyle = player.color; // Change to a different color during dash OPTIONAL
+    } else {
+        ctx.fillStyle = player.color;
+    }
     ctx.fillRect(player.x, player.y, player.width, player.height);
+
+    // **Draw Dash Indicator (Optional)**
+    if (player.isDashing) {
+        ctx.fillStyle = 'yellow';
+        ctx.font = '24px Arial';
+        ctx.fillText('DASH!', canvas.width / 2, 30);
+    }
 
     // Draw Survival Time
     ctx.fillStyle = 'black';
@@ -842,6 +948,14 @@ function renderGame() {
     ctx.fillStyle = 'blue';
     ctx.font = '20px Arial';
     ctx.fillText('FLOW: ' + flowAvailable, 10, 60);
+
+    // **Draw Dash Cooldown Indicator (Optional)**
+    /*
+    ctx.fillStyle = 'green';
+    ctx.font = '18px Arial';
+    let remainingCooldown = Math.max(0, Math.floor((player.lastDashTime + player.dashCooldown - Date.now()) / 1000));
+    ctx.fillText('Dash Cooldown: ' + remainingCooldown + 's', 10, 90);
+    */
 
     // Draw Instruction Texts in Top Right
     ctx.fillStyle = 'black';
@@ -893,6 +1007,9 @@ function resetGame() {
     player.onGround = false;
     player.jumpCount = 0;
     player.isTeleporting = false;
+    player.isDashing = false;
+    player.lastDashTime = 0; // Reset lastDashTime
+    player.trail = []; // Reset trail
 
     // Reset projectiles and lasers
     projectiles = [];
